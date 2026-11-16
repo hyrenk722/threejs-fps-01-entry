@@ -55,6 +55,10 @@ export function updateAgentHitboxes(agent) {
   agent.height = h;
 }
 
+// Pooled hitscan result: resolveShot runs per pellet per shot in the hot loop,
+// so it reuses one object instead of allocating a fresh result each call.
+// Callers use the result synchronously within the shot and never retain it.
+const _hit = { wall: false, agent: null, part: null, dist: 0 };
 // One hitscan ray: nearest agent hitbox or world box wins. Returns null on a miss.
 export function resolveShot(world, agents, ox, oy, oz, dx, dy, dz, maxDist, excludeId) {
   let best = null;
@@ -63,7 +67,8 @@ export function resolveShot(world, agents, ox, oy, oz, dx, dy, dz, maxDist, excl
     const t = rayBox(ox, oy, oz, dx, dy, dz, c, bestD);
     if (t >= 0 && t < bestD) {
       bestD = t;
-      best = { wall: true, dist: t };
+      _hit.wall = true; _hit.agent = null; _hit.part = null; _hit.dist = t;
+      best = _hit;
     }
   }
   for (const a of agents) {
@@ -72,7 +77,8 @@ export function resolveShot(world, agents, ox, oy, oz, dx, dy, dz, maxDist, excl
       const t = rayBox(ox, oy, oz, dx, dy, dz, a.boxes[part], bestD);
       if (t >= 0 && t < bestD) {
         bestD = t;
-        best = { agent: a, part, dist: t };
+        _hit.wall = false; _hit.agent = a; _hit.part = part; _hit.dist = t;
+        best = _hit;
       }
     }
   }

@@ -411,9 +411,12 @@ function checkElimination() {
   else if (aliveH === 0) endRound('breakers', 'Harborwatch eliminated', false);
 }
 
+const noisePool = []; // reused noise objects: pushNoise runs on every shot
 function pushNoise(agent) {
-  state.noises.push({ x: agent.pos.x, z: agent.pos.z, t: state.time, team: agent.team });
-  if (state.noises.length > 40) state.noises.shift();
+  const n = noisePool.pop() || { x: 0, z: 0, t: 0, team: null };
+  n.x = agent.pos.x; n.z = agent.pos.z; n.t = state.time; n.team = agent.team;
+  state.noises.push(n);
+  if (state.noises.length > 40) noisePool.push(state.noises.shift());
 }
 
 const combat = {
@@ -798,8 +801,8 @@ function step(dt) {
   }
   arsenal.step(dt);
 
-  // prune old noises
-  while (state.noises.length && state.time - state.noises[0].t > 3) state.noises.shift();
+  // prune old noises (expired objects return to the pool, no allocation)
+  while (state.noises.length && state.time - state.noises[0].t > 3) noisePool.push(state.noises.shift());
 }
 
 function syncCamera() {
