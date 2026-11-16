@@ -761,7 +761,11 @@ function step(dt) {
     }
   }
   // smoke expiry + meshes
-  state.smokes = state.smokes.filter((s) => state.time < s.until);
+  // In-place prune (no allocation in the 60 Hz hot loop): the old
+  // state.smokes.filter(...) built a fresh array every fixed step.
+  for (let i = state.smokes.length - 1; i >= 0; i -= 1) {
+    if (state.time >= state.smokes[i].until) state.smokes.splice(i, 1);
+  }
   smokeMeshes.forEach((m, i) => {
     const s = state.smokes[i];
     if (s) {
