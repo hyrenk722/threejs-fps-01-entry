@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PORTFALL — a three.js tactical FPS</title>
+<style>
+  /* PORTFALL look: dusk orange against harbour teal. Palette lives in src/palette.js. */
+  :root {
+    --canvas: #14161a;
+    --surface: rgba(18, 20, 24, 0.86);
+    --hairline: #2c323a;
+    --ink: #efe9dc;
+    --muted: #8d97a0;
+    --amber: #f0a830;
+    --teal: #37c8d8;
+    --breaker: #d95f2b;
+    --harborwatch: #3fa7c4;
+    --red: #e5484d;
+    --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-readout: ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--canvas); color: var(--ink); font-family: var(--font-ui); }
+  #game, #game canvas { position: fixed; inset: 0; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 0; height: 0; --gap: 6px; }
+  #crosshair i { position: absolute; background: var(--ink); opacity: .9; }
+  #crosshair i:nth-child(1) { left: -1px; top: calc(-1 * var(--gap) - 8px); width: 2px; height: 8px; }
+  #crosshair i:nth-child(2) { left: -1px; top: var(--gap); width: 2px; height: 8px; }
+  #crosshair i:nth-child(3) { top: -1px; left: calc(-1 * var(--gap) - 8px); height: 2px; width: 8px; }
+  #crosshair i:nth-child(4) { top: -1px; left: var(--gap); height: 2px; width: 8px; }
+  #crosshair .dot { position: absolute; left: -1px; top: -1px; width: 2px; height: 2px; background: var(--ink); }
+
+  #hitmarker { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; }
+  #hitmarker.on { opacity: 1; }
+  #hitmarker.kill i { background: var(--red); }
+  #hitmarker.head i { background: var(--amber); }
+  #hitmarker i { position: absolute; background: var(--ink); }
+  #hitmarker i:nth-child(1) { left: 12px; top: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(2) { left: 12px; bottom: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(3) { top: 12px; left: 0; height: 2px; width: 8px; }
+  #hitmarker i:nth-child(4) { top: 12px; right: 0; height: 2px; width: 8px; }
+
+  #damage-arc { position: fixed; left: 50%; top: 50%; width: 150px; height: 150px; margin: -75px 0 0 -75px; border-radius: 50%; border: 4px solid transparent; border-top-color: var(--red); opacity: 0; transition: opacity 300ms linear; }
+  #damage-arc.on { opacity: .9; }
+
+  #scope { position: fixed; inset: 0; display: none; background: radial-gradient(circle at 50% 50%, transparent 26%, #000 27%); pointer-events: none; }
+  #scope.on { display: block; }
+  #scope::before, #scope::after { content: ''; position: absolute; background: #000; }
+  #scope::before { left: 50%; top: 0; width: 1px; height: 100%; }
+  #scope::after { top: 50%; left: 0; height: 1px; width: 100%; }
+
+  .panel { background: var(--surface); border: 1px solid var(--hairline); border-radius: 4px; }
+
+  #health { position: fixed; left: 28px; bottom: 24px; width: 220px; }
+  #health-num { font-family: var(--font-readout); font-size: 34px; line-height: 1; }
+  #health-bar-wrap { height: 8px; background: #262a30; margin: 6px 0; border-radius: 2px; overflow: hidden; }
+  #health-bar { height: 100%; width: 100%; background: var(--teal); transition: width 150ms linear; }
+  #health-bar.low { background: var(--red); }
+  #armor-pips i { display: inline-block; width: 22px; height: 8px; margin-right: 3px; background: #2c323a; }
+  #armor-pips i.on { background: var(--amber); }
+  #armor-pips .helmet { font-size: 11px; color: var(--amber); margin-left: 6px; letter-spacing: .1em; }
+
+  #ammo { position: fixed; right: 32px; bottom: 24px; text-align: right; }
+  #ammo-mag { font-family: var(--font-readout); font-size: 56px; line-height: 1; }
+  #ammo.empty #ammo-mag { color: var(--amber); }
+  #ammo-reserve { font-family: var(--font-readout); font-size: 16px; color: var(--muted); }
+  #weapon-name { font-size: 13px; color: var(--muted); margin-top: 4px; letter-spacing: .06em; }
+
+  #money { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); font-family: var(--font-readout); font-size: 18px; padding: 6px 14px; }
+  #money-value { color: var(--amber); }
+
+  #topbar { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); text-align: center; }
+  #timer { font-family: var(--font-readout); font-size: 30px; line-height: 1; }
+  #timer.fuse { color: var(--amber); }
+  #timer-label { font-size: 11px; color: var(--muted); letter-spacing: .12em; margin-top: 4px; }
+  .pips { display: flex; gap: 3px; justify-content: center; margin-top: 5px; }
+  .pips i { width: 14px; height: 6px; background: #2c323a; }
+  #pips-breakers i.on { background: var(--breaker); }
+  #pips-harborwatch i.on { background: var(--harborwatch); }
+
+  #alive { position: fixed; top: 16px; left: 28px; font-size: 12px; color: var(--muted); }
+  .alive-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+  .alive-row i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #2c323a; }
+  #alive-breakers i.on { background: var(--breaker); }
+  #alive-harborwatch i.on { background: var(--harborwatch); }
+
+  #killfeed { position: fixed; top: 16px; right: 28px; text-align: right; font-size: 13px; }
+  .kf { padding: 3px 8px; margin-bottom: 4px; background: var(--surface); border-radius: 3px; }
+  .kf-b { border-right: 3px solid var(--breaker); }
+  .kf-h { border-right: 3px solid var(--harborwatch); }
+
+  #banner { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); text-align: center; padding: 18px 34px; }
+  #banner-title { font-size: 30px; font-weight: 600; letter-spacing: .02em; }
+  #banner-sub { font-size: 14px; color: var(--muted); margin-top: 6px; }
+
+  #toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); font-family: var(--font-readout); font-size: 16px; color: var(--amber); opacity: 0; transition: opacity 200ms linear; }
+  #toast.on { opacity: 1; }
+
+  #charge-bar { position: fixed; left: 50%; top: 58%; transform: translateX(-50%); width: 320px; text-align: center; }
+  #charge-label { font-size: 13px; letter-spacing: .1em; margin-bottom: 6px; }
+  #charge-fill-wrap { height: 8px; background: #262a30; border-radius: 2px; overflow: hidden; }
+  #charge-fill { height: 100%; width: 0; background: var(--amber); }
+
+  #buy-menu { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(10, 12, 14, 0.72); pointer-events: auto; }
+  #buy-menu[hidden], #scoreboard[hidden], #banner[hidden], #charge-bar[hidden] { display: none; }
+  .buy-panel { width: min(760px, 94vw); padding: 12px 26px; transform: scale(0.7); }
+  .buy-panel h2 { margin: 0 0 4px; font-size: 18px; }
+  .buy-panel p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+  #buy-money { color: var(--amber); font-family: var(--font-readout); font-size: 18px; }
+  #buy-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .buy-group { grid-column: 1 / -1; font-size: 12px; letter-spacing: .14em; color: var(--muted); margin-top: 4px; text-transform: uppercase; }
+  .buy-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 12px; background: #1e2228; border: 1px solid var(--hairline); border-radius: 4px; color: var(--ink); font: inherit; cursor: pointer; text-align: left; }
+  .buy-item:hover { border-color: var(--amber); }
+  .buy-item.cant { opacity: .45; }
+  .buy-item.owned { border-color: var(--teal); }
+  .buy-name { font-weight: 600; }
+  .buy-desc { font-size: 12px; color: var(--muted); }
+  .buy-price { font-family: var(--font-readout); color: var(--amber); font-size: 14px; }
+
+  #scoreboard { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(10, 12, 14, 0.6); }
+  #scoreboard table { border-collapse: collapse; background: var(--surface); font-size: 14px; }
+  #scoreboard td, #scoreboard th { padding: 7px 16px; border-bottom: 1px solid var(--hairline); text-align: left; }
+  #scoreboard tr.breakers td:first-child { border-left: 3px solid var(--breaker); }
+  #scoreboard tr.harborwatch td:first-child { border-left: 3px solid var(--harborwatch); }
+  #scoreboard tr.you { background: rgba(240, 168, 48, 0.08); }
+
+  .overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(16, 18, 22, 0.82); pointer-events: auto; }
+  .overlay[hidden] { display: none; }
+  .panel-card { width: min(460px, 100%); padding: 32px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 4px; }
+  .panel-card h1 { margin: 0 0 8px; font-size: 34px; letter-spacing: .04em; }
+  .panel-card h1 span { color: var(--amber); }
+  .panel-card p { margin: 0 0 20px; font-size: 15px; line-height: 1.55; color: var(--muted); }
+  #team-row { display: flex; gap: 10px; margin-bottom: 20px; }
+  #team-row button { flex: 1; padding: 12px; font: inherit; font-weight: 600; border: 1px solid var(--hairline); border-radius: 4px; background: #1e2228; color: var(--ink); cursor: pointer; }
+  #team-row button.picked { border-color: var(--amber); background: #2a2417; }
+  #team-row button[data-team="breakers"].picked { border-color: var(--breaker); }
+  #team-row button[data-team="harborwatch"].picked { border-color: var(--harborwatch); }
+  #play { font: inherit; font-weight: 600; padding: 13px 18px; border: 1px solid var(--amber); border-radius: 4px; background: var(--amber); color: #14161a; cursor: pointer; }
+  #play:hover { background: var(--ink); border-color: var(--ink); }
+  .keys { margin: 22px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+  .keys kbd { padding: 2px 7px; border: 1px solid var(--hairline); border-radius: 3px; font-family: var(--font-readout); font-size: 12px; color: var(--ink); }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud" aria-hidden="true">
+  <div id="scope"></div>
+  <div id="crosshair"><i></i><i></i><i></i><i></i><span class="dot"></span></div>
+  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+  <div id="damage-arc"></div>
+
+  <div id="topbar">
+    <div id="timer">1:45</div>
+    <div id="timer-label">ROUND 1 · FIRST TO 9</div>
+    <div class="pips" id="pips-breakers"></div>
+    <div class="pips" id="pips-harborwatch"></div>
+  </div>
+
+  <div id="alive">
+    <div class="alive-row"><span>Breakers</span><span id="alive-breakers"></span></div>
+    <div class="alive-row"><span>Harborwatch</span><span id="alive-harborwatch"></span></div>
+  </div>
+
+  <div id="killfeed"></div>
+
+  <div id="health">
+    <div id="health-num">100</div>
+    <div id="health-bar-wrap"><div id="health-bar"></div></div>
+    <div id="armor-pips"></div>
+  </div>
+
+  <div id="ammo"><span id="ammo-mag">12</span> <span id="ammo-reserve">/ 96</span><div id="weapon-name">P9 Dockhand</div></div>
+  <div id="money" class="panel">$ <span id="money-value">800</span></div>
+
+  <div id="banner" class="panel" hidden><div id="banner-title"></div><div id="banner-sub"></div></div>
+  <div id="toast"></div>
+  <div id="charge-bar" hidden><div id="charge-label"></div><div id="charge-fill-wrap"><div id="charge-fill"></div></div></div>
+
+  <div id="buy-menu" hidden>
+    <div class="buy-panel panel">
+      <h2>Buy phase — <span id="buy-money">$800</span></h2>
+      <p>Weapons and armour stay with you until you die. B to close. Click an item to buy it.</p>
+      <div id="buy-grid"></div>
+    </div>
+  </div>
+
+  <div id="scoreboard" hidden>
+    <table><thead><tr><th>Player</th><th>Team</th><th>Role</th><th>K</th><th>D</th><th>$</th></tr></thead><tbody id="score-body"></tbody></table>
+  </div>
+</div>
+
+<div id="overlay" class="overlay">
+  <section class="panel-card" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
+    <h1 id="overlay-title">PORT<span>FALL</span></h1>
+    <p id="overlay-copy">Kestrel Bay Terminal — Breakers vs Harborwatch. First to 9 rounds. Arm the Hullbreaker charge, or pull it.</p>
+    <div id="team-row">
+      <button type="button" data-team="breakers" class="picked">Breakers — attack</button>
+      <button type="button" data-team="harborwatch">Harborwatch — defend</button>
+    </div>
+    <button id="play" type="button">Click to play</button>
+    <ul class="keys">
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move · <kbd>Mouse</kbd> Look · <kbd>Click</kbd> Fire</li>
+      <li><kbd>R</kbd> Reload · <kbd>B</kbd> Buy · <kbd>E</kbd> Arm / pull charge · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> Weapons</li>
+      <li><kbd>4</kbd><kbd>5</kbd><kbd>6</kbd> Scrap / Flare / Fog · <kbd>Shift</kbd> Sneak · <kbd>Ctrl</kbd> Crouch · <kbd>Space</kbd> Jump · <kbd>Tab</kbd> Score</li>
+    </ul>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js"
+  }
+}
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
